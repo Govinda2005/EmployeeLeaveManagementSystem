@@ -1,4 +1,4 @@
-# ELMS/app.py
+# ELMS/my_flask_app/app.py
 import os
 from flask import Flask
 from flask_sqlalchemy import SQLAlchemy
@@ -32,21 +32,26 @@ def create_app():
     db.init_app(app)
     bcrypt.init_app(app)
     login_manager.init_app(app)
-    login_manager.login_view = 'login' # Route name for the login page
+    login_manager.login_view = 'auth.login' # Route name for the login page (using blueprint name)
     login_manager.login_message_category = 'info' # Bootstrap class for flash messages
 
     # Import models and forms inside create_app to avoid circular imports
     # This is a common Flask pattern when using blueprints or larger apps
-    from .models import User, LeaveRequest, AuditLog, Role # Import all models
-    from .forms import RegistrationForm, LoginForm, LeaveApplicationForm, UserUpdateForm, PasswordResetForm # Import all forms
+    from my_flask_app.models import User # Only User is needed here for load_user, others will be imported in routes
+    # from my_flask_app.forms import RegistrationForm, LoginForm, LeaveApplicationForm, UserUpdateForm, PasswordResetForm # Import all forms
 
     # Define login_manager.user_loader
     @login_manager.user_loader
     def load_user(user_id):
         return User.query.get(int(user_id))
 
-    # Import and register blueprints (we'll create these later)
-    from .routes import main_bp, auth_bp, employee_bp, manager_bp, admin_bp
+    # Import and register blueprints
+    from my_flask_app.main.routes import main_bp
+    from my_flask_app.auth.routes import auth_bp
+    from my_flask_app.employee.routes import employee_bp
+    from my_flask_app.manager.routes import manager_bp
+    from my_flask_app.admin.routes import admin_bp
+
     app.register_blueprint(main_bp)
     app.register_blueprint(auth_bp)
     app.register_blueprint(employee_bp)
@@ -55,10 +60,9 @@ def create_app():
 
     return app
 
-# This block is typically in a run.py file, but for initial setup, it's here.
-# We will move it to run.py later.
-if __name__ == '__main__':
-    app = create_app()
-    with app.app_context():
-        db.create_all() # Creates tables based on your models
-    app.run(debug=True) # Run the Flask development server
+# This block will be moved to run.py later. For now, we keep it for initial testing.
+# if __name__ == '__main__':
+#     app = create_app()
+#     with app.app_context():
+#         db.create_all() # Creates tables based on your models
+#     app.run(debug=True) # Run the Flask development server
