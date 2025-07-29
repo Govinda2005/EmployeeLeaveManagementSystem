@@ -1,0 +1,23 @@
+{# my_flask_app/templates/account.html #}
+{% extends "layout.html" %}
+{% block content %}
+    <div class="content-section">
+        <h1 class="mb-4">Account Information</h1>
+        <div class="row">
+            <div class="col-md-6">
+                <p><strong>Username:</strong> {{ current_user.username }}</p>
+                <p><strong>Email:</strong> {{ current_user.email }}</p>
+                <p><strong>Role:</strong> {{ current_user.user_role.name }}</p>
+                <p><strong>Account Status:</strong> {{ "Active" if current_user.is_active else "Inactive" }}</p>
+                <p><strong>Member Since:</strong> {{ current_user.date_joined.strftime('%Y-%m-%d %H:%M:%S') }}</p>
+            </div>
+        </div>
+        <hr>
+        <h2 class="mt-4">Actions</h2>
+        <p>
+            <!-- Add links for changing password, updating profile etc. if implemented -->
+            <a href="#" class="btn btn-secondary disabled">Change Password (Coming Soon)</a>
+            <a href="#" class="btn btn-secondary disabled">Edit Profile (Coming Soon)</a>
+        </p>
+    </div>
+{% endblock content %}

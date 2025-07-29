@@ -1,0 +1,77 @@
+{# my_flask_app/templates/admin_dashboard.html #}
+{% extends "layout.html" %}
+{% block content %}
+    <div class="content-section">
+        <h1 class="mb-4">Admin Dashboard</h1>
+
+        <div class="row mb-4">
+            <div class="col-md-3">
+                <div class="card text-white bg-primary mb-3 rounded-3">
+                    <div class="card-header">Total Users</div>
+                    <div class="card-body">
+                        <h5 class="card-title">{{ total_users }}</h5>
+                    </div>
+                </div>
+            </div>
+            <div class="col-md-3">
+                <div class="card text-white bg-info mb-3 rounded-3">
+                    <div class="card-header">Total Leaves</div>
+                    <div class="card-body">
+                        <h5 class="card-title">{{ total_leaves }}</h5>
+                    </div>
+                </div>
+            </div>
+            <div class="col-md-3">
+                <div class="card text-white bg-warning mb-3 rounded-3">
+                    <div class="card-header">Pending Leaves</div>
+                    <div class="card-body">
+                        <h5 class="card-title">{{ pending_leaves }}</h5>
+                    </div>
+                </div>
+            </div>
+            <div class="col-md-3">
+                <div class="card text-white bg-success mb-3 rounded-3">
+                    <div class="card-header">Approved Leaves</div>
+                    <div class="card-body">
+                        <h5 class="card-title">{{ approved_leaves }}</h5>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <h2 class="mb-3">Quick Actions</h2>
+        <div class="mb-4">
+            <a href="{{ url_for('admin.user_management') }}" class="btn btn-primary me-2">User Management</a>
+            <a href="{{ url_for('admin.audit_logs') }}" class="btn btn-secondary me-2">View Audit Logs</a>
+            <a href="{{ url_for('admin.create_user') }}" class="btn btn-success">Create New User</a>
+        </div>
+
+        <h2 class="mb-3">Recent Audit Logs</h2>
+        {% if recent_logs %}
+            <div class="table-responsive">
+                <table class="table table-striped table-sm">
+                    <thead>
+                        <tr>
+                            <th>Timestamp</th>
+                            <th>User</th>
+                            <th>Action</th>
+                            <th>IP Address</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {% for log in recent_logs %}
+                            <tr>
+                                <td>{{ log.timestamp.strftime('%Y-%m-%d %H:%M:%S') }}</td>
+                                <td>{{ log.actor.username if log.actor else 'N/A' }}</td>
+                                <td>{{ log.action }}</td>
+                                <td>{{ log.ip_address or 'N/A' }}</td>
+                            </tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+        {% else %}
+            <p>No recent audit logs.</p>
+        {% endif %}
+    </div>
+{% endblock content %}

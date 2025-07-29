@@ -1,10 +1,10 @@
-{# my_flask_app/templates/register.html #}
+{# my_flask_app/templates/edit_user.html #}
 {% extends "layout.html" %}
 {% block content %}
     <div class="content-section">
+        <legend class="border-bottom mb-4">Edit User: {{ user.username }}</legend>
         <form method="POST" action="">
             {{ form.hidden_tag() }} {# CSRF token #}
-            <legend class="border-bottom mb-4">Join Today</legend>
             <div class="mb-3">
                 {{ form.username.label(class="form-label") }}
                 {{ form.username(class="form-control") }}
@@ -24,31 +24,27 @@
                 {% endif %}
             </div>
             <div class="mb-3">
-                {{ form.password.label(class="form-label") }}
-                {{ form.password(class="form-control") }}
-                {% if form.password.errors %}
-                    {% for error in form.password.errors %}
+                {{ form.role.label(class="form-label") }}
+                {{ form.role(class="form-select") }}
+                {% if form.role.errors %}
+                    {% for error in form.role.errors %}
                         <div class="text-danger">{{ error }}</div>
                     {% endfor %}
                 {% endif %}
             </div>
-            <div class="mb-3">
-                {{ form.confirm_password.label(class="form-label") }}
-                {{ form.confirm_password(class="form-control") }}
-                {% if form.confirm_password.errors %}
-                    {% for error in form.confirm_password.errors %}
+            <div class="form-check mb-3">
+                {{ form.is_active(class="form-check-input") }}
+                {{ form.is_active.label(class="form-check-label") }}
+                {% if form.is_active.errors %}
+                    {% for error in form.is_active.errors %}
                         <div class="text-danger">{{ error }}</div>
                     {% endfor %}
                 {% endif %}
             </div>
             <div class="mb-3">
                 {{ form.submit(class="btn btn-primary") }}
+                <a href="{{ url_for('admin.user_management') }}" class="btn btn-secondary ms-2">Cancel</a>
             </div>
         </form>
-        <div class="border-top pt-3">
-            <small class="text-muted">
-                Already Have An Account? <a class="ml-2" href="{{ url_for('auth.login') }}">Sign In</a>
-            </small>
-        </div>
     </div>
 {% endblock content %}

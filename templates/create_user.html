@@ -1,10 +1,19 @@
-{# my_flask_app/templates/login.html #}
+{# my_flask_app/templates/create_user.html #}
 {% extends "layout.html" %}
 {% block content %}
     <div class="content-section">
+        <legend class="border-bottom mb-4">Create New User</legend>
         <form method="POST" action="">
             {{ form.hidden_tag() }} {# CSRF token #}
-            <legend class="border-bottom mb-4">Log In</legend>
+            <div class="mb-3">
+                {{ form.username.label(class="form-label") }}
+                {{ form.username(class="form-control") }}
+                {% if form.username.errors %}
+                    {% for error in form.username.errors %}
+                        <div class="text-danger">{{ error }}</div>
+                    {% endfor %}
+                {% endif %}
+            </div>
             <div class="mb-3">
                 {{ form.email.label(class="form-label") }}
                 {{ form.email(class="form-control") }}
@@ -23,18 +32,19 @@
                     {% endfor %}
                 {% endif %}
             </div>
-            <div class="form-check mb-3">
-                {{ form.remember(class="form-check-input") }}
-                {{ form.remember.label(class="form-check-label") }}
+            <div class="mb-3">
+                {{ form.confirm_password.label(class="form-label") }}
+                {{ form.confirm_password(class="form-control") }}
+                {% if form.confirm_password.errors %}
+                    {% for error in form.confirm_password.errors %}
+                        <div class="text-danger">{{ error }}</div>
+                    {% endfor %}
+                {% endif %}
             </div>
             <div class="mb-3">
                 {{ form.submit(class="btn btn-primary") }}
+                <a href="{{ url_for('admin.user_management') }}" class="btn btn-secondary ms-2">Cancel</a>
             </div>
         </form>
-        <div class="border-top pt-3">
-            <small class="text-muted">
-                Need An Account? <a class="ml-2" href="{{ url_for('auth.register') }}">Sign Up Now</a>
-            </small>
-        </div>
     </div>
 {% endblock content %}
