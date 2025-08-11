@@ -1,27 +1,65 @@
-# ELMS/run.py
-from my_flask_app.app import create_app, db
-from my_flask_app.models import Role # Import the Role model
+import os
+from flask.cli import FlaskGroup
+from app import create_app, db
+from app.models import User, LeaveRequest, AuditLog, UserRole, LeaveType, LeaveStatus
+from datetime import date, datetime
 
 app = create_app()
+cli = FlaskGroup(app)
+
+@cli.command("create-db")
+def create_db():
+    """Create database tables."""
+    db.create_all()
+    print("Database tables created!")
+
+@cli.command("drop-db")
+def drop_db():
+    """Drop database tables."""
+    db.drop_all()
+    print("Database tables dropped!")
+
+@cli.command("init-db")
+def init_db():
+    """Initialize database with sample data."""
+    # Drop and create tables
+    db.drop_all()
+    db.create_all()
+    
+    # Create admin user
+    admin = User(
+        username='admin',
+        email='admin@elms.com',
+        first_name='System',
+        last_name='Administrator',
+        role=UserRole.ADMIN
+    )
+    admin.set_password('admin123')
+    db.session.add(admin)
+    
+    # Commit all users
+    db.session.commit()  
+@cli.command("create-admin")
+def create_admin():
+    """Create an admin user."""
+    username = input("Username: ")
+    email = input("Email: ")
+    first_name = input("First Name: ")
+    last_name = input("Last Name: ")
+    password = input("Password: ")
+    
+    admin = User(
+        username=username,
+        email=email,
+        first_name=first_name,
+        last_name=last_name,
+        role=UserRole.ADMIN
+    )
+    admin.set_password(password)
+    db.session.add(admin)
+    db.session.commit()
+    
+    print(f"Admin user '{username}' created successfully!")
 
 if __name__ == '__main__':
-    with app.app_context():
-        # Create database tables if they don't exist
-        db.create_all()
-        print("Database tables created or already exist.")
-
-        # --- Initialize default roles if they don't exist ---
-        roles_to_add = ['Admin', 'Manager', 'Employee']
-        for role_name in roles_to_add:
-            role = Role.query.filter_by(name=role_name).first()
-            if not role:
-                new_role = Role(name=role_name)
-                db.session.add(new_role)
-                print(f"Added role: {role_name}")
-            else:
-                print(f"Role '{role_name}' already exists.")
-        db.session.commit()
-        print("Role initialization complete.")
-        # --- End Role Initialization ---
-
-    app.run(debug=True)
+    cli()
