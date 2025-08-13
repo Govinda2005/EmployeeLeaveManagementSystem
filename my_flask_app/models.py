@@ -1,74 +1,145 @@
-# ELMS/my_flask_app/models.py
-from datetime import datetime
-from my_flask_app.app import db, login_manager
+from app import db
 from flask_login import UserMixin
+from werkzeug.security import generate_password_hash, check_password_hash
+from datetime import datetime, date
+from enum import Enum
 
-# UserMixin provides default implementations for methods required by Flask-Login
-# (is_authenticated, is_active, is_anonymous, get_id())
+class UserRole(Enum):
+    ADMIN = 'admin'
+    MANAGER = 'manager'
+    EMPLOYEE = 'employee'
 
-@login_manager.user_loader
-def load_user(user_id):
-    """
-    Callback function to reload the user object from the user ID stored in the session.
-    Required by Flask-Login.
-    """
-    return User.query.get(int(user_id))
+class LeaveStatus(Enum):
+    PENDING = 'pending'
+    APPROVED = 'approved'
+    REJECTED = 'rejected'
+    CANCELLED = 'cancelled'
 
-class Role(db.Model):
-    """
-    Represents user roles in the system (Admin, Manager, Employee).
-    """
+class LeaveType(Enum):
+    SICK = 'sick'
+    VACATION = 'vacation'
+    PERSONAL = 'personal'
+    MATERNITY = 'maternity'
+    PATERNITY = 'paternity'
+    EMERGENCY = 'emergency'
+
+class User(UserMixin, db.Model):
+    __tablename__ = 'users'
+    
     id = db.Column(db.Integer, primary_key=True)
-    name = db.Column(db.String(20), unique=True, nullable=False)
-    users = db.relationship('User', backref='user_role', lazy=True) # Relationship to User model
-
-    def __repr__(self):
-        return f"Role('{self.name}')"
-
-class User(db.Model, UserMixin):
-    """
-    Represents a user in the system (Employee, Manager, Admin).
-    """
-    id = db.Column(db.Integer, primary_key=True)
-    username = db.Column(db.String(20), unique=True, nullable=False)
+    username = db.Column(db.String(80), unique=True, nullable=False)
     email = db.Column(db.String(120), unique=True, nullable=False)
-    password = db.Column(db.String(60), nullable=False) # Hashed password
-    role_id = db.Column(db.Integer, db.ForeignKey('role.id'), nullable=False, default=3) # Default to Employee (assuming ID 3)
-    is_active = db.Column(db.Boolean, default=True) # For deactivating users
-    date_joined = db.Column(db.DateTime, nullable=False, default=datetime.utcnow)
-
-    # Relationships
-    leave_requests = db.relationship('LeaveRequest', backref='applicant', lazy=True)
-    audit_logs = db.relationship('AuditLog', backref='actor', lazy=True)
-
+    password_hash = db.Column(db.String(255), nullable=False)
+    first_name = db.Column(db.String(50), nullable=False)
+    last_name = db.Column(db.String(50), nullable=False)
+    role = db.Column(db.Enum(UserRole), nullable=False)
+    is_active = db.Column(db.Boolean, default=True)
+    created_at = db.Column(db.DateTime, default=datetime.utcnow)
+    updated_at = db.Column(db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+    
+    # Manager relationship
+    manager_id = db.Column(db.Integer, db.ForeignKey('users.id'), nullable=True)
+    manager = db.relationship('User', remote_side=[id], backref='employees')
+    
+    # Leave requests
+    leave_requests = db.relationship('LeaveRequest', foreign_keys='LeaveRequest.employee_id', backref='employee', lazy='dynamic')
+    approved_requests = db.relationship('LeaveRequest', foreign_keys='LeaveRequest.approved_by', backref='approver', lazy='dynamic')
+    
+    def set_password(self, password):
+        self.password_hash = generate_password_hash(password)
+    
+    def check_password(self, password):
+        return check_password_hash(self.password_hash, password)
+    
+    @property
+    def full_name(self):
+        return f"{self.first_name} {self.last_name}"
+    
+    def is_admin(self):
+        return self.role == UserRole.ADMIN
+    
+    def is_manager(self):
+        return self.role == UserRole.MANAGER
+    
+    def is_employee(self):
+        return self.role == UserRole.EMPLOYEE
+    
+    def can_approve_leave(self, employee_id):
+        if self.is_admin():
+            return True
+        if self.is_manager():
+            employee = User.query.get(employee_id)
+            return employee and employee.manager_id == self.id
+        return False
+    
+    def get_subordinates(self):
+        if self.is_admin():
+            return User.query.filter_by(role=UserRole.EMPLOYEE).all()
+        elif self.is_manager():
+            return self.employees
+        return []
+    
     def __repr__(self):
-        return f"User('{self.username}', '{self.email}', Role ID: {self.role_id})"
+        return f'<User {self.username}>'
 
 class LeaveRequest(db.Model):
-    """
-    Represents a leave application submitted by an employee.
-    """
+    __tablename__ = 'leave_requests'
+    
     id = db.Column(db.Integer, primary_key=True)
-    user_id = db.Column(db.Integer, db.ForeignKey('user.id'), nullable=False)
+    employee_id = db.Column(db.Integer, db.ForeignKey('users.id'), nullable=False)
+    leave_type = db.Column(db.Enum(LeaveType), nullable=False)
     start_date = db.Column(db.Date, nullable=False)
     end_date = db.Column(db.Date, nullable=False)
-    reason = db.Column(db.Text, nullable=False)
-    status = db.Column(db.String(20), nullable=False, default='Pending') # Pending, Approved, Rejected, Cancelled
-    request_date = db.Column(db.DateTime, nullable=False, default=datetime.utcnow)
-    manager_notes = db.Column(db.Text, nullable=True) # Notes from manager on approval/rejection
-
+    reason = db.Column(db.Text)
+    status = db.Column(db.Enum(LeaveStatus), default=LeaveStatus.PENDING)
+    approved_by = db.Column(db.Integer, db.ForeignKey('users.id'), nullable=True)
+    approval_date = db.Column(db.DateTime, nullable=True)
+    manager_comments = db.Column(db.Text)
+    created_at = db.Column(db.DateTime, default=datetime.utcnow)
+    updated_at = db.Column(db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+    
+    @property
+    def duration(self):
+        return (self.end_date - self.start_date).days + 1
+    
+    @property
+    def is_pending(self):
+        return self.status == LeaveStatus.PENDING
+    
+    @property
+    def is_approved(self):
+        return self.status == LeaveStatus.APPROVED
+    
+    @property
+    def is_rejected(self):
+        return self.status == LeaveStatus.REJECTED
+    
+    @property
+    def can_be_cancelled(self):
+        return self.status in [LeaveStatus.PENDING, LeaveStatus.APPROVED] and self.start_date > date.today()
+    
+    @property
+    def can_be_edited(self):
+        return self.status == LeaveStatus.PENDING and self.start_date > date.today()
+    
     def __repr__(self):
-        return f"LeaveRequest('{self.applicant.username}', '{self.start_date}' to '{self.end_date}', Status: '{self.status}')"
+        return f'<LeaveRequest {self.id} - {self.employee.username}>'
 
 class AuditLog(db.Model):
-    """
-    Tracks significant actions within the system for auditing purposes.
-    """
+    __tablename__ = 'audit_logs'
+    
     id = db.Column(db.Integer, primary_key=True)
-    user_id = db.Column(db.Integer, db.ForeignKey('user.id'), nullable=False) # User who performed the action
-    action = db.Column(db.String(255), nullable=False) # Description of the action
-    timestamp = db.Column(db.DateTime, nullable=False, default=datetime.utcnow)
-    ip_address = db.Column(db.String(45), nullable=True) # Optional: IP address of the actor
-
+    user_id = db.Column(db.Integer, db.ForeignKey('users.id'), nullable=False)
+    action = db.Column(db.String(100), nullable=False)
+    entity_type = db.Column(db.String(50), nullable=False)
+    entity_id = db.Column(db.Integer, nullable=True)
+    old_values = db.Column(db.JSON, nullable=True)
+    new_values = db.Column(db.JSON, nullable=True)
+    ip_address = db.Column(db.String(45), nullable=True)
+    user_agent = db.Column(db.String(255), nullable=True)
+    timestamp = db.Column(db.DateTime, default=datetime.utcnow)
+    
+    user = db.relationship('User', backref='audit_logs')
+    
     def __repr__(self):
-        return f"AuditLog('{self.actor.username}', '{self.action}', '{self.timestamp}')"
+        return f'<AuditLog {self.id} - {self.action}>'
