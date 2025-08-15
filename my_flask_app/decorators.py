@@ -1,31 +1,41 @@
-# ELMS/my_flask_app/decorators.py
+from flask import request, session
+from app import db
+from app.models import AuditLog
 from functools import wraps
-from flask import abort
 from flask_login import current_user
-from my_flask_app.models import Role # Import Role model
+from flask import request, session, redirect, url_for
 
-def role_required(role_names):
-    """
-    Custom decorator to restrict access to routes based on user roles.
-    Takes a list of role names (e.g., ['Admin', 'Manager']).
-    """
-    def decorator(f):
-        @wraps(f)
-        def decorated_function(*args, **kwargs):
-            if not current_user.is_authenticated:
-                abort(403) # Forbidden if not logged in
-            
-            # Fetch the role object from the database using the role_id
-            user_role = Role.query.get(current_user.role_id)
 
-            if user_role and user_role.name in role_names:
-                return f(*args, **kwargs)
-            else:
-                abort(403) # Forbidden if role doesn't match
-        return decorated_function
-    return decorator
+def log_activity(action, entity_type=None, entity_id=None, old_values=None, new_values=None):
+    """Log user activity for audit purposes"""
+    if current_user.is_authenticated:
+        audit_log = AuditLog(
+            user_id=current_user.id,
+            action=action,
+            entity_type=entity_type or 'system',
+            entity_id=entity_id,
+            old_values=old_values,
+            new_values=new_values,
+            ip_address=request.environ.get('HTTP_X_REAL_IP', request.remote_addr),
+            user_agent=request.user_agent.string
+        )
+        db.session.add(audit_log)
+        db.session.commit()
 
-# Specific role decorators for convenience
-admin_required = role_required(['Admin'])
-manager_required = role_required(['Manager', 'Admin']) # Managers can access manager routes, admins can too
-employee_required = role_required(['Employee', 'Manager', 'Admin']) # All authenticated users can access employee routes
+def admin_required(f):
+    """Decorator to require admin role"""
+    @wraps(f)
+    def decorated_function(*args, **kwargs):
+        if not current_user.is_authenticated or not current_user.is_admin():
+            return redirect(url_for('main.unauthorized'))
+        return f(*args, **kwargs)
+    return decorated_function
+
+def manager_or_admin_required(f):
+    """Decorator to require manager or admin role"""
+    @wraps(f)
+    def decorated_function(*args, **kwargs):
+        if not current_user.is_authenticated or not (current_user.is_manager() or current_user.is_admin()):
+            return redirect(url_for('main.unauthorized'))
+        return f(*args, **kwargs)
+    return decorated_function
