@@ -1,23 +1,45 @@
-{# my_flask_app/templates/account.html #}
-{% extends "layout.html" %}
-{% block content %}
-    <div class="content-section">
-        <h1 class="mb-4">Account Information</h1>
-        <div class="row">
-            <div class="col-md-6">
-                <p><strong>Username:</strong> {{ current_user.username }}</p>
-                <p><strong>Email:</strong> {{ current_user.email }}</p>
-                <p><strong>Role:</strong> {{ current_user.user_role.name }}</p>
-                <p><strong>Account Status:</strong> {{ "Active" if current_user.is_active else "Inactive" }}</p>
-                <p><strong>Member Since:</strong> {{ current_user.date_joined.strftime('%Y-%m-%d %H:%M:%S') }}</p>
-            </div>
-        </div>
-        <hr>
-        <h2 class="mt-4">Actions</h2>
-        <p>
-            <!-- Add links for changing password, updating profile etc. if implemented -->
-            <a href="#" class="btn btn-secondary disabled">Change Password (Coming Soon)</a>
-            <a href="#" class="btn btn-secondary disabled">Edit Profile (Coming Soon)</a>
-        </p>
+<nav
+  class="sidebar position-fixed d-none d-md-block"
+  style="width: 250px; z-index: 1000"
+>
+  <div class="p-3">
+    <h5 class="text-white mb-4">
+      <i class="fas fa-calendar-check me-2"></i>
+      ELMS
+    </h5>
+    <div class="text-white-50 small mb-3">
+      Welcome, {{ current_user.first_name }}!<br />
+      <span class="badge bg-light text-dark"
+        >{{ current_user.role.value.title() }}</span
+      >
     </div>
-{% endblock content %}
+    <ul class="nav nav-pills flex-column">
+      <li class="nav-item">
+        <a
+          class="nav-link {% if request.endpoint and 'dashboard' in request.endpoint %}active{% endif %}"
+          href="{{ url_for('admin.dashboard') }}"
+        >
+          <i class="fas fa-tachometer-alt me-2"></i> Dashboard
+        </a>
+      </li>
+      <li class="nav-item">
+        <a
+          class="nav-link {% if request.endpoint == 'admin.audit_logs' %}active{% endif %}"
+          href="{{ url_for('admin.audit_logs') }}"
+        >
+          <i class="fas fa-history me-2"></i> Audit Logs
+        </a>
+      </li>
+      <li class="nav-item mt-3">
+        <a class="nav-link" href="{{ url_for('main.profile') }}">
+          <i class="fas fa-user me-2"></i> Profile
+        </a>
+      </li>
+      <li class="nav-item">
+        <a class="nav-link" href="{{ url_for('auth.logout') }}">
+          <i class="fas fa-sign-out-alt me-2"></i> Logout
+        </a>
+      </li>
+    </ul>
+  </div>
+</nav>
