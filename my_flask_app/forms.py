@@ -93,20 +93,17 @@ class ReportForm(FlaskForm):
         ('team', 'Team Report'),
         ('user', 'User Report')
     ], validators=[DataRequired()])
-    month = SelectField('Month', choices=[(str(i), datetime(2000, i, 1).strftime('%B')) for i in range(1, 13)])
-    year = SelectField('Year', choices=[(str(year), str(year)) for year in range(2020, 2030)])
+    month = SelectField('Month', choices=[(str(i), datetime(2000, i, 1).strftime('%B')) for i in range(1, 13)],
+                        default=lambda: str(datetime.now().month))
+    year = SelectField('Year', choices=[(str(year), str(year)) for year in range(2020, 2030)],
+                       default=lambda: str(datetime.now().year))
     team_manager = SelectField('Team Manager', coerce=int, validators=[Optional()])
     employee = SelectField('Employee', coerce=int, validators=[Optional()])
     format = SelectField('Format', choices=[('pdf', 'PDF'), ('csv', 'CSV')], validators=[DataRequired()])
 
     def __init__(self, *args, **kwargs):
         super(ReportForm, self).__init__(*args, **kwargs)
-        # Set default values
-        current_date = datetime.now()
-        self.month.data = str(current_date.month)
-        self.year.data = str(current_date.year)
         
-        # Populate team manager choices
         managers = User.query.filter_by(role=UserRole.MANAGER).all()
         self.team_manager.choices = [(0, 'All Teams')] + [(m.id, m.full_name) for m in managers]
         
