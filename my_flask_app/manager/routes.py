@@ -211,4 +211,3 @@ def team_members():
     
     log_activity('team_members_viewed')
     return render_template('manager/team_members.html', members=members)
-    return render_template('manager/team_members.html', members=members)return render_template('manager/team_members.html', members=members)return render_template('manager/team_members.html', members=members)
