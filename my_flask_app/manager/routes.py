@@ -1,84 +1,214 @@
-# ELMS/my_flask_app/manager/routes.py
-from flask import Blueprint, render_template, url_for, flash, redirect, request, abort
+from flask import Blueprint, render_template, redirect, url_for, flash, request
 from flask_login import login_required, current_user
-from my_flask_app.app import db
-from my_flask_app.models import LeaveRequest, User, AuditLog
-from my_flask_app.forms import LeaveActionForm
-from my_flask_app.decorators import manager_required
-from sqlalchemy import or_
+from app import db
+from app.models import User, LeaveRequest, LeaveStatus, UserRole
+from app.forms import ApprovalForm, ReportForm
+from app.decorators import manager_or_admin_required, log_activity
+from datetime import datetime
+from sqlalchemy import and_
 
 manager_bp = Blueprint('manager', __name__)
 
-@manager_bp.route('/manage_leaves', methods=['GET', 'POST'])
+@manager_bp.route('/dashboard')
 @login_required
-@manager_required # Only managers (or admins) can access
-def manage_leaves():
-    """
-    Displays all leave requests for managers to review, with filtering options.
-    """
-    # Query all leave requests
-    leaves_query = LeaveRequest.query.join(User).order_by(LeaveRequest.request_date.desc())
+@manager_or_admin_required
+def dashboard():
+    # Get manager's team statistics
+    if current_user.is_manager():
+        team_members = current_user.employees
+        pending_requests = LeaveRequest.query.join(User,LeaveRequest.employee_id == User.id).filter(
+            User.manager_id == current_user.id,
+            LeaveRequest.status == LeaveStatus.PENDING
+        ).count()
+        
+        approved_requests = LeaveRequest.query.join(User, LeaveRequest.employee_id == User.id).filter(
+            User.manager_id == current_user.id,
+            LeaveRequest.status == LeaveStatus.APPROVED
+        ).count()
+        
+        total_requests = LeaveRequest.query.join(User, LeaveRequest.employee_id == User.id).filter(
+            User.manager_id == current_user.id
+        ).count()
+        
+    else:  # Admin has access to all data
+        team_members = User.query.filter_by(role=UserRole.EMPLOYEE).all()
+        pending_requests = LeaveRequest.query.filter_by(status=LeaveStatus.PENDING).count()
+        approved_requests = LeaveRequest.query.filter_by(status=LeaveStatus.APPROVED).count()
+        total_requests = LeaveRequest.query.count()
+    
+    # Recent requests for review
+    if current_user.is_manager():
+        recent_requests = LeaveRequest.query.join(User, LeaveRequest.employee_id == User.id).filter(
+            User.manager_id == current_user.id,
+            LeaveRequest.status == LeaveStatus.PENDING
+        ).order_by(LeaveRequest.created_at.desc()).limit(5).all()
+    else:
+        recent_requests = LeaveRequest.query.filter_by(
+            status=LeaveStatus.PENDING
+        ).order_by(LeaveRequest.created_at.desc()).limit(5).all()
+    
+    log_activity('manager_dashboard_viewed')
+    
+    return render_template('manager/dashboard.html',
+                         team_members=team_members,
+                         pending_requests=pending_requests,
+                         approved_requests=approved_requests,
+                         total_requests=total_requests,
+                         recent_requests=recent_requests)
 
-    # Filtering logic
-    status_filter = request.args.get('status')
-    employee_filter = request.args.get('employee') # Employee username
-    start_date_filter = request.args.get('start_date')
-    end_date_filter = request.args.get('end_date')
-
-    if status_filter and status_filter != 'All':
-        leaves_query = leaves_query.filter(LeaveRequest.status == status_filter)
+@manager_bp.route('/leave_requests', methods=['GET', 'POST'])
+@login_required
+@manager_or_admin_required
+def leave_requests():
+    # Handle POST request for Accept/Reject actions
+    if request.method == 'POST':
+        req_id = request.form.get('request_id')
+        action = request.form.get('action')
+        leave_request = LeaveRequest.query.get(req_id)
+        if leave_request:
+            if action == 'accept':
+                leave_request.status = LeaveStatus.APPROVED
+            elif action == 'reject':
+                leave_request.status = LeaveStatus.REJECTED
+            db.session.commit()      
+        return redirect(url_for('manager.leave_requests'))
+    
+    page = request.args.get('page', 1, type=int)
+    per_page = 10
+    
+    # Filter options
+    status_filter = request.args.get('status', '')
+    employee_filter = request.args.get('employee', '', type=int)
+    
+    if current_user.is_manager():
+        query = LeaveRequest.query.join(User, LeaveRequest.employee_id == User.id).filter(User.manager_id == current_user.id)
+    else:  # Admin can see all requests
+        query = LeaveRequest.query
+    
+    # Apply filters
+    if status_filter:
+        try:
+            # Always use enum name (upper-case)
+            query = query.filter(LeaveRequest.status == LeaveStatus[status_filter.upper()])
+        except KeyError:
+            pass  # Ignore invalid status
+    
     if employee_filter:
-        leaves_query = leaves_query.filter(User.username.ilike(f'%{employee_filter}%'))
-    if start_date_filter:
-        leaves_query = leaves_query.filter(LeaveRequest.start_date >= start_date_filter)
-    if end_date_filter:
-        leaves_query = leaves_query.filter(LeaveRequest.end_date <= end_date_filter)
-
-    leaves = leaves_query.all()
+        query = query.filter(LeaveRequest.employee_id == employee_filter)
     
-    # Get unique statuses for filter dropdown
-    statuses = sorted(list(set([leave.status for leave in LeaveRequest.query.all()])))
+    # Order by creation date
+    query = query.order_by(LeaveRequest.created_at.desc())
     
-    return render_template('manage_leaves.html',
-                           title='Manage Leave Requests',
-                           leaves=leaves,
-                           statuses=statuses,
-                           selected_status=status_filter,
-                           selected_employee=employee_filter,
-                           selected_start_date=start_date_filter,
-                           selected_end_date=end_date_filter)
+    requests = query.paginate(page=page, per_page=per_page, error_out=False)
+    
+    # Get employees for filter dropdown
+    if current_user.is_manager():
+        employees = current_user.employees
+    else:
+        employees = User.query.filter_by(role=UserRole.EMPLOYEE).all()
+    
+    log_activity('leave_requests_viewed')
+    
+    return render_template('manager/leave_requests.html',
+                         requests=requests,
+                         employees=employees,
+                         status_filter=status_filter,
+                         employee_filter=employee_filter)
 
-@manager_bp.route('/review_leave/<int:leave_id>', methods=['GET', 'POST'])
+@manager_bp.route('/review_request/<int:request_id>', methods=['GET', 'POST'])
 @login_required
-@manager_required
-def review_leave(leave_id):
-    """Allows managers to review and take action on a specific leave request."""
-    leave_request = LeaveRequest.query.get_or_404(leave_id)
+@manager_or_admin_required
+def review_request(request_id):
+    leave_request = LeaveRequest.query.get_or_404(request_id)
+    
+    if not current_user.can_approve_leave(leave_request.employee_id):
+        flash('You do not have permission to review this request', 'danger')
+        return redirect(url_for('manager.leave_requests'))
+    
+    
+    if leave_request.status != LeaveStatus.PENDING:
+        flash('This request has already been processed', 'warning')
+        return redirect(url_for('manager.leave_requests'))
+    
+    form = ApprovalForm()
+    
+    if request.method == 'POST' and form.validate_on_submit():
+        action = request.form.get('action')
 
-    # Managers can only act on Pending requests
-    if leave_request.status not in ['Pending']:
-        flash(f"Cannot review leave request ID {leave_id} as its status is '{leave_request.status}'.", 'warning')
-        return redirect(url_for('manager.manage_leaves'))
+        if action in ['approve', 'reject']:
+            old_status = leave_request.status.value
+            
+            if action == 'approve':
+                leave_request.status = LeaveStatus.APPROVED
+            else:
+                leave_request.status = LeaveStatus.REJECTED
+                
+            leave_request.approved_by = current_user.id
+            leave_request.approval_date = datetime.utcnow()
+            leave_request.manager_comments = form.comments.data
+            leave_request.updated_at = datetime.utcnow()
+            
+            db.session.commit()
+            
+            log_activity(f'leave_request_{action}d', 'leave_request', leave_request.id,
+                        old_values={'status': old_status},
+                        new_values={'status': leave_request.status.value, 'comments': form.comments.data})
+            
+            flash(f'Leave request {action}d successfully', 'success')
+            return redirect(url_for('manager.leave_requests'))
+        else:
+            flash('Invalid action performed.', 'danger')
+    
+    return render_template('manager/review_request.html', 
+                         form=form, 
+                         leave_request=leave_request)
 
-    form = LeaveActionForm()
+@manager_bp.route('/team_reports', methods=['GET', 'POST'])
+@login_required
+@manager_or_admin_required
+def team_reports():
+    form = ReportForm()
+    
+
+    form.report_type.choices = [('monthly', 'Monthly Report'), ('team', 'Team Report')]
+    
     if form.validate_on_submit():
-        leave_request.status = form.status.data
-        leave_request.manager_notes = form.manager_notes.data
-        db.session.commit()
+        report_type = form.report_type.data
+        format_type = form.format.data
+        
+        if report_type == 'monthly':
+            month = int(form.month.data)
+            year = int(form.year.data)
+            return generate_manager_monthly_report(month, year, format_type)
+        elif report_type == 'team':
+            return generate_manager_team_report(format_type)
+    
+    log_activity('team_reports_viewed')
+    
+    return render_template('manager/team_reports.html', form=form)
 
-        audit_action = f"Leave request ID {leave_id} {form.status.data} by manager {current_user.username}"
-        audit_log = AuditLog(user_id=current_user.id, action=audit_action,
-                             ip_address=request.remote_addr)
-        db.session.add(audit_log)
-        db.session.commit()
+def generate_manager_monthly_report(month, year, format_type):
+    from app.admin.routes import generate_monthly_report
+    manager_id = None
+    if current_user.is_manager():
+        manager_id = current_user.id
+    return generate_monthly_report(month, year, format_type, manager_id=manager_id)
 
-        flash(f'Leave request for {leave_request.applicant.username} has been {form.status.data}.', 'success')
-        return redirect(url_for('manager.manage_leaves'))
-    elif request.method == 'GET':
-        # Pre-fill notes if any, though typically managers start fresh
-        form.manager_notes.data = leave_request.manager_notes or ''
+def generate_manager_team_report(format_type):
+    from app.admin.routes import generate_team_report
+    
+    manager_id = current_user.id if current_user.is_manager() else None
+    return generate_team_report(manager_id, format_type)
 
-    return render_template('review_leave.html',
-                           title='Review Leave Request',
-                           leave=leave_request,
-                           form=form)
+@manager_bp.route('/team_members')
+@login_required
+@manager_or_admin_required
+def team_members():
+    if current_user.is_manager():
+        members = current_user.employees
+    else:  
+        members = User.query.filter_by(role=UserRole.EMPLOYEE).all()
+    
+    log_activity('team_members_viewed')
+    return render_template('manager/team_members.html', members=members)
+    return render_template('manager/team_members.html', members=members)return render_template('manager/team_members.html', members=members)return render_template('manager/team_members.html', members=members)
